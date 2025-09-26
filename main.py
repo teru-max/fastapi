@@ -66,7 +66,7 @@ def decode_base64_audio(base64_data: str) -> bytes:
 # -----------------------------
 # Pitch analysis (basic-pitch)
 # -----------------------------
-def _analyze_pitch_with_basic_pitch(audio: np.ndarray, sr: int = 22050) -> List[Dict[str, Any]]:
+def _analyze_pitch_with_basic_pitch(audio_path: str) -> List[Dict[str, Any]]:
     """
     Run basic-pitch's predict() to obtain note events.
     Returns note events as a list of dicts:
@@ -74,16 +74,19 @@ def _analyze_pitch_with_basic_pitch(audio: np.ndarray, sr: int = 22050) -> List[
     Sorted by start time.
     """
     try:
-        model_output, midi_data, note_events = predict(audio, sr)
+        model_output, midi_data, note_events = predict(audio_path)
         events: List[Dict[str, Any]] = []
+        
+        # note_events is a list of tuples: (start_time, end_time, midi_note, velocity, pitch_bends)
         for ev in note_events:
-            start = float(ev.get("start_time", 0.0))
-            end = float(ev.get("end_time", start))
-            midi = int(round(ev.get("pitch_midi", ev.get("midi_note", 0))))
-            velocity = float(ev.get("amplitude", ev.get("velocity", 0.0)))
+            start = float(ev[0])  # start_time
+            end = float(ev[1])    # end_time
+            midi = int(round(ev[2]))  # midi_note
+            velocity = float(ev[3])    # velocity
             # Clamp to MIDI range
             midi = max(0, min(127, midi))
             events.append({"start": start, "end": end, "midi": midi, "velocity": velocity})
+        
         events.sort(key=lambda x: x["start"])
         return events
     except Exception as e:
@@ -273,7 +276,7 @@ async def analyze_pitch(
         audio = _ensure_wav_readable(temp_path, target_sr)
 
         # Analyze pitch
-        note_events = _analyze_pitch_with_basic_pitch(audio, sr=target_sr)  # [{start, end, midi, velocity}...]
+        note_events = _analyze_pitch_with_basic_pitch(temp_path)  # [{start, end, midi, velocity}...]
 
         # Extract a simple melody MIDI list aligned by event order (common for monophonic vocal lines)
         melody_midi: List[int] = [ev["midi"] for ev in note_events]
@@ -336,7 +339,7 @@ async def analyze_pitch_json(request: dict) -> JSONResponse:
         # 音声解析
         target_sr = 22050
         audio = _ensure_wav_readable(temp_path, target_sr)
-        note_events = _analyze_pitch_with_basic_pitch(audio, sr=target_sr)
+        note_events = _analyze_pitch_with_basic_pitch(temp_path)
         melody_midi: List[int] = [ev["midi"] for ev in note_events]
         
         # ハモリ生成
